@@ -1,0 +1,20 @@
+# Caddy config for Railway. Railway injects $PORT at runtime.
+{
+	admin off
+	auto_https off
+}
+
+:{$PORT:8080} {
+	root * /srv
+	encode gzip
+
+	# Clean URLs: /contact -> contact.html if present
+	try_files {path} {path}.html {path}/index.html
+
+	file_server
+
+	# Cache static assets aggressively; HTML stays fresh.
+	@assets path /assets/*
+	header @assets Cache-Control "public, max-age=604800"
+	header *.html Cache-Control "public, max-age=300"
+}
