@@ -129,6 +129,11 @@
     var em  = form.querySelector("#em");
     var ph  = form.querySelector("#ph");
     var msg = form.querySelector("#msg");
+    var hp  = form.querySelector("#hp");
+
+    /* Honeypot: real people leave this hidden field blank. If it's filled,
+       it's a bot — silently show success and do NOT submit anything. */
+    if (hp && hp.value) { showSuccess(form, btn); return; }
 
     /* Follow Up Boss–shaped payload; the Edge Function reads
        these fields for the database and forwards them to FUB. */
@@ -139,7 +144,8 @@
       phones:    (ph && ph.value.trim()) ? [{ value: ph.value.trim(), type: "mobile" }] : [],
       tags:      [getTag()],
       source:    "Indexed Annuity Secrets Website",
-      notes:     msg && msg.value.trim() ? [{ body: msg.value.trim() }] : []
+      notes:     msg && msg.value.trim() ? [{ body: msg.value.trim() }] : [],
+      website:   hp ? hp.value : ""
     };
 
     /* No endpoint configured yet — show success without sending */
