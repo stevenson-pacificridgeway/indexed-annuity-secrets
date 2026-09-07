@@ -2,18 +2,22 @@
    ─────────────────────────────────────────────────────────
    LEAD CAPTURE CONFIGURATION
    ─────────────────────────────────────────────────────────
-   Form submissions are POSTed to a Supabase Edge Function
+   Most form submissions are POSTed to a Supabase Edge Function
    ("submit-lead"). That function stores the lead in the
    Postgres database AND forwards it to Follow Up Boss.
 
-   The Follow Up Boss API key lives ONLY on the server, as a
-   Supabase secret — it is never exposed in the browser.
+   The Contact form additionally requires SMS verification: it
+   texts a one-time code (via "send-code"), the visitor enters
+   it in a popup, and only a verified lead is registered (via
+   "verify-lead"). Forms opt into this with the data-otp attribute.
 
-   Set LEAD_ENDPOINT to your deployed function URL:
-     https://<project-ref>.supabase.co/functions/v1/submit-lead
+   All API keys live ONLY on the server, as Supabase secrets —
+   they are never exposed in the browser.
    ───────────────────────────────────────────────────────── */
 
-  var LEAD_ENDPOINT = "https://ppemattxkpbriqnrdqee.supabase.co/functions/v1/submit-lead";
+  var LEAD_ENDPOINT        = "https://ppemattxkpbriqnrdqee.supabase.co/functions/v1/submit-lead";
+  var SEND_CODE_ENDPOINT   = "https://ppemattxkpbriqnrdqee.supabase.co/functions/v1/send-code";
+  var VERIFY_LEAD_ENDPOINT = "https://ppemattxkpbriqnrdqee.supabase.co/functions/v1/verify-lead";
 
 /* ───────────────────────────────────────────────────────── */
 
@@ -122,33 +126,35 @@
     return "ias-website";
   }
 
-  /* ── Submit the lead to the Supabase Edge Function ──── */
-  function submitLead(form, btn) {
+  /* ── Build a Follow Up Boss–shaped payload from a form ── */
+  function buildPayload(form) {
     var fn  = form.querySelector("#fn");
     var ln  = form.querySelector("#ln");
     var em  = form.querySelector("#em");
     var ph  = form.querySelector("#ph");
     var msg = form.querySelector("#msg");
     var hp  = form.querySelector("#hp");
-
-    /* Honeypot: real people leave this hidden field blank. If it's filled,
-       it's a bot — silently show success and do NOT submit anything. */
-    if (hp && hp.value) { showSuccess(form, btn); return; }
-
-    /* Follow Up Boss–shaped payload; the Edge Function reads
-       these fields for the database and forwards them to FUB. */
-    var payload = {
-      firstName: fn  ? fn.value.trim()  : "",
-      lastName:  ln  ? ln.value.trim()  : "",
-      emails:    em  ? [{ value: em.value.trim(), type: "work" }] : [],
-      phones:    (ph && ph.value.trim()) ? [{ value: ph.value.trim(), type: "mobile" }] : [],
+    var phoneVal = (ph && ph.value.trim()) ? ph.value.trim() : "";
+    return {
+      firstName: fn ? fn.value.trim() : "",
+      lastName:  ln ? ln.value.trim() : "",
+      emails:    (em && em.value.trim()) ? [{ value: em.value.trim(), type: "work" }] : [],
+      phones:    phoneVal ? [{ value: phoneVal, type: "mobile" }] : [],
+      phone:     phoneVal,
       tags:      [getTag()],
       source:    "Indexed Annuity Secrets Website",
-      notes:     msg && msg.value.trim() ? [{ body: msg.value.trim() }] : [],
+      notes:     (msg && msg.value.trim()) ? [{ body: msg.value.trim() }] : [],
       website:   hp ? hp.value : ""
     };
+  }
 
-    /* No endpoint configured yet — show success without sending */
+  /* ── Submit the lead directly (non-OTP forms) ───────── */
+  function submitLead(form, btn) {
+    var payload = buildPayload(form);
+
+    /* Honeypot: real people leave this blank. If filled → bot → fake success. */
+    if (payload.website) { showSuccess(form, btn); return; }
+
     if (!LEAD_ENDPOINT || LEAD_ENDPOINT.indexOf("YOUR-PROJECT-REF") !== -1) {
       console.warn("[IAS] LEAD_ENDPOINT not set. Showing success without submitting.");
       showSuccess(form, btn);
@@ -161,16 +167,12 @@
       body:    JSON.stringify(payload)
     })
     .then(function(res) {
-      if (res.ok) {
-        console.log("[IAS] Lead captured:", payload.firstName, payload.lastName);
-      } else {
-        console.warn("[IAS] Lead endpoint returned", res.status);
-      }
-      showSuccess(form, btn); /* always show success to the user */
+      if (!res.ok) console.warn("[IAS] Lead endpoint returned", res.status);
+      showSuccess(form, btn);
     })
     .catch(function(err) {
       console.error("[IAS] Lead submit error:", err);
-      showSuccess(form, btn); /* fail silently to the user */
+      showSuccess(form, btn);
     });
   }
 
@@ -180,6 +182,184 @@
     form.style.display = "none";
     if (successEl) successEl.classList.add("show");
   }
+
+  function setFormError(form, message) {
+    var box = form.querySelector(".form-error");
+    if (!box) {
+      box = document.createElement("p");
+      box.className = "form-error";
+      box.setAttribute("role", "alert");
+      var submitBtn = form.querySelector("[type=submit]");
+      if (submitBtn) submitBtn.parentElement.insertBefore(box, submitBtn);
+      else form.appendChild(box);
+    }
+    box.textContent = message;
+    box.style.display = "block";
+  }
+  function clearFormError(form) {
+    var box = form.querySelector(".form-error");
+    if (box) box.style.display = "none";
+  }
+
+  /* ── SMS one-time-passcode flow (Contact form) ──────── */
+  var otp = {
+    modal:   document.getElementById("otpModal"),
+    input:   null, verifyBtn: null, resendBtn: null, closeBtn: null,
+    errEl:   null, toEl: null,
+    form:    null, payload: null
+  };
+
+  function otpReady() { return !!otp.modal; }
+
+  function initOtpModal() {
+    if (!otpReady()) return;
+    otp.input     = otp.modal.querySelector("#otpCode");
+    otp.verifyBtn = otp.modal.querySelector(".otp__verify");
+    otp.resendBtn = otp.modal.querySelector(".otp__resend");
+    otp.closeBtn  = otp.modal.querySelector(".otp__close");
+    otp.errEl     = otp.modal.querySelector(".otp__err");
+    otp.toEl      = otp.modal.querySelector(".otp__to");
+
+    if (otp.closeBtn)  otp.closeBtn.addEventListener("click", closeOtp);
+    otp.modal.addEventListener("click", function (e) { if (e.target === otp.modal) closeOtp(); });
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape" && otp.modal && !otp.modal.hidden) closeOtp();
+    });
+    if (otp.input) {
+      otp.input.addEventListener("input", function () {
+        otp.input.value = otp.input.value.replace(/\D/g, "").slice(0, 6);
+        hideOtpErr();
+      });
+      otp.input.addEventListener("keydown", function (e) {
+        if (e.key === "Enter") { e.preventDefault(); doVerify(); }
+      });
+    }
+    if (otp.verifyBtn) otp.verifyBtn.addEventListener("click", doVerify);
+    if (otp.resendBtn) otp.resendBtn.addEventListener("click", doResend);
+  }
+
+  function showOtpErr(msg) { if (otp.errEl) { otp.errEl.textContent = msg; otp.errEl.hidden = false; } }
+  function hideOtpErr()    { if (otp.errEl) otp.errEl.hidden = true; }
+
+  function openOtp(form, payload) {
+    otp.form = form; otp.payload = payload;
+    if (otp.toEl) otp.toEl.textContent = payload.phone;
+    if (otp.input) otp.input.value = "";
+    hideOtpErr();
+    if (otp.resendBtn) { otp.resendBtn.disabled = false; otp.resendBtn.textContent = "Resend code"; }
+    if (otp.verifyBtn) { otp.verifyBtn.disabled = false; otp.verifyBtn.textContent = "Verify & Send"; }
+    otp.modal.hidden = false;
+    setTimeout(function () { if (otp.input) otp.input.focus(); }, 50);
+  }
+
+  function closeOtp() {
+    if (!otp.modal) return;
+    otp.modal.hidden = true;
+    var btn = otp.form ? otp.form.querySelector("[type=submit]") : null;
+    if (btn) { btn.disabled = false; btn.textContent = btn._orig || "Submit"; }
+  }
+
+  /* Step 1 — send the code, then open the popup */
+  function startOtp(form, btn) {
+    var payload = buildPayload(form);
+
+    /* Honeypot → silent fake success, no SMS */
+    if (payload.website) { showSuccess(form, btn); return; }
+
+    /* Safety net: if the popup markup is missing, fall back to direct submit */
+    if (!otpReady()) { submitLead(form, btn); return; }
+
+    clearFormError(form);
+    if (btn) { btn.disabled = true; btn.textContent = "Sending code…"; }
+
+    fetch(SEND_CODE_ENDPOINT, {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ phone: payload.phone, website: payload.website })
+    })
+    .then(readJson)
+    .then(function (res) {
+      if (btn) { btn.disabled = false; btn.textContent = btn._orig || "Submit"; }
+      if (res.ok && res.body && res.body.ok) {
+        openOtp(form, payload);
+      } else if (res.body && res.body.error === "invalid_phone") {
+        setFormError(form, "Please enter a valid mobile number that can receive text messages.");
+      } else {
+        setFormError(form, "We couldn't send a verification text right now. Please try again, or call us at 619-374-8100.");
+      }
+    })
+    .catch(function () {
+      if (btn) { btn.disabled = false; btn.textContent = btn._orig || "Submit"; }
+      setFormError(form, "Network error. Please check your connection and try again.");
+    });
+  }
+
+  /* Step 2 — verify the code; on success the lead is registered server-side */
+  function doVerify() {
+    if (!otp.payload) return;
+    var code = (otp.input ? otp.input.value : "").replace(/\D/g, "");
+    if (code.length < 4) { showOtpErr("Enter the 6-digit code from your text."); return; }
+    hideOtpErr();
+    if (otp.verifyBtn) { otp.verifyBtn.disabled = true; otp.verifyBtn.textContent = "Verifying…"; }
+
+    var body = {};
+    for (var k in otp.payload) body[k] = otp.payload[k];
+    body.code = code;
+
+    fetch(VERIFY_LEAD_ENDPOINT, {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify(body)
+    })
+    .then(readJson)
+    .then(function (res) {
+      if (otp.verifyBtn) { otp.verifyBtn.disabled = false; otp.verifyBtn.textContent = "Verify & Send"; }
+      if (res.ok && res.body && res.body.ok) {
+        var form = otp.form;
+        otp.modal.hidden = true;
+        showSuccess(form, null);
+      } else if (res.body && res.body.error === "code") {
+        showOtpErr("That code isn't right or has expired. Please try again.");
+      } else if (res.body && res.body.error === "missing_phone_or_code") {
+        showOtpErr("Please enter the 6-digit code from your text.");
+      } else {
+        showOtpErr("Something went wrong verifying the code. Please try again.");
+      }
+    })
+    .catch(function () {
+      if (otp.verifyBtn) { otp.verifyBtn.disabled = false; otp.verifyBtn.textContent = "Verify & Send"; }
+      showOtpErr("Network error. Please try again.");
+    });
+  }
+
+  /* Resend a fresh code */
+  function doResend() {
+    if (!otp.payload) return;
+    if (otp.resendBtn) { otp.resendBtn.disabled = true; otp.resendBtn.textContent = "Sending…"; }
+    hideOtpErr();
+    fetch(SEND_CODE_ENDPOINT, {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ phone: otp.payload.phone, website: otp.payload.website })
+    })
+    .then(readJson)
+    .then(function () {
+      if (otp.resendBtn) { otp.resendBtn.textContent = "Code sent ✓"; }
+      setTimeout(function () {
+        if (otp.resendBtn) { otp.resendBtn.disabled = false; otp.resendBtn.textContent = "Resend code"; }
+      }, 4000);
+    })
+    .catch(function () {
+      if (otp.resendBtn) { otp.resendBtn.disabled = false; otp.resendBtn.textContent = "Resend code"; }
+    });
+  }
+
+  function readJson(r) {
+    return r.json().then(function (j) { return { ok: r.ok, body: j }; })
+                   .catch(function () { return { ok: r.ok, body: {} }; });
+  }
+
+  initOtpModal();
 
   /* ── Wire all forms ─────────────────────────────────── */
   document.querySelectorAll("form[data-validate]").forEach(function (form) {
@@ -195,8 +375,13 @@
       e.preventDefault();
       if (!validateForm(form)) return;
       var btn = form.querySelector("[type=submit]");
-      if (btn) { btn._orig = btn.textContent; btn.disabled = true; btn.textContent = "Sending…"; }
-      submitLead(form, btn);
+      if (btn) { btn._orig = btn.textContent; }
+      if (form.hasAttribute("data-otp")) {
+        startOtp(form, btn);            /* Contact form → SMS verify first */
+      } else {
+        if (btn) { btn.disabled = true; btn.textContent = "Sending…"; }
+        submitLead(form, btn);          /* other forms → submit directly */
+      }
     });
   });
 
