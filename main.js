@@ -203,16 +203,61 @@
 
   /* ── SMS one-time-passcode flow (Contact form) ──────── */
   var otp = {
-    modal:   document.getElementById("otpModal"),
+    modal:   null,
     input:   null, verifyBtn: null, resendBtn: null, closeBtn: null,
     errEl:   null, toEl: null,
     form:    null, payload: null
   };
 
+  /* Popup styles + markup are injected here so any page with a
+     data-otp form shows the verification popup — no per-page HTML. */
+  var OTP_STYLES = ".form-error{background:#fbe9e6;color:#a5342a;border:1px solid #eec2bb;border-radius:10px;padding:10px 12px;font-size:14px;margin:0 0 14px;display:none}"
+    + ".otp{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(11,18,32,.62);padding:20px}"
+    + ".otp[hidden]{display:none}"
+    + ".otp__card{background:#fff;color:#16233c;border-radius:18px;max-width:410px;width:100%;padding:30px 28px 26px;text-align:center;position:relative;box-shadow:0 24px 70px rgba(11,18,32,.45);font-family:'Inter',system-ui,sans-serif}"
+    + ".otp__close{position:absolute;top:12px;right:16px;border:0;background:none;font-size:28px;line-height:1;color:#9aa5ba;cursor:pointer;padding:4px}.otp__close:hover{color:#16233c}"
+    + ".otp__icon{font-size:40px;line-height:1}"
+    + ".otp__card h3{font-family:'Fraunces',Georgia,serif;font-weight:600;font-size:23px;margin:10px 0 6px;color:#16233c}"
+    + ".otp__sub{color:#53617d;font-size:14.5px;line-height:1.5;margin:0 0 20px}.otp__sub b{color:#16233c;white-space:nowrap}"
+    + ".otp__input{width:100%;font-size:30px;letter-spacing:.45em;text-align:center;padding:14px 10px;border:2px solid #d8dee9;border-radius:12px;font-family:'Inter',monospace;color:#16233c;margin-bottom:8px;box-sizing:border-box}"
+    + ".otp__input::placeholder{color:#c3ccda;letter-spacing:.35em}"
+    + ".otp__input:focus{outline:none;border-color:#b0821f;box-shadow:0 0 0 3px rgba(176,130,31,.15)}"
+    + ".otp__err{color:#c0392b;font-size:13.5px;margin:2px 0 14px;min-height:1em}"
+    + ".otp__resend{margin-top:14px;background:none;border:0;color:#a9791f;font-weight:600;cursor:pointer;font-size:14px;font-family:inherit}.otp__resend:disabled{color:#9aa5ba;cursor:default}"
+    + ".otp__fine{margin:16px 0 0;font-size:12px;color:#9aa5ba}";
+
+  var OTP_MARKUP =
+      '<div class="otp" id="otpModal" hidden><div class="otp__card" role="dialog" aria-modal="true" aria-labelledby="otpTitle">'
+    + '<button class="otp__close" type="button" aria-label="Close">&times;</button>'
+    + '<div class="otp__icon" aria-hidden="true">📱</div>'
+    + '<h3 id="otpTitle">Verify your phone</h3>'
+    + '<p class="otp__sub">We texted a 6-digit code to <b class="otp__to"></b>.<br>Enter it below to continue.</p>'
+    + '<input class="otp__input" id="otpCode" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="––––––" aria-label="6-digit verification code">'
+    + '<p class="otp__err" hidden></p>'
+    + '<button class="btn btn--gold btn--lg otp__verify" type="button" style="width:100%">Verify &amp; Continue</button>'
+    + '<button class="otp__resend" type="button">Resend code</button>'
+    + '<p class="otp__fine">This quick step confirms you\'re a real person. Standard message rates may apply.</p>'
+    + '</div></div>';
+
+  function ensureOtpModal() {
+    if (document.getElementById("otpModal")) return;
+    if (!document.querySelector("form[data-otp]")) return;
+    if (!document.getElementById("otp-styles")) {
+      var st = document.createElement("style");
+      st.id = "otp-styles";
+      st.textContent = OTP_STYLES;
+      document.head.appendChild(st);
+    }
+    var wrap = document.createElement("div");
+    wrap.innerHTML = OTP_MARKUP;
+    document.body.appendChild(wrap.firstElementChild);
+  }
+
   function otpReady() { return !!otp.modal; }
 
   function initOtpModal() {
-    if (!otpReady()) return;
+    otp.modal = document.getElementById("otpModal");
+    if (!otp.modal) return;
     otp.input     = otp.modal.querySelector("#otpCode");
     otp.verifyBtn = otp.modal.querySelector(".otp__verify");
     otp.resendBtn = otp.modal.querySelector(".otp__resend");
@@ -247,7 +292,7 @@
     if (otp.input) otp.input.value = "";
     hideOtpErr();
     if (otp.resendBtn) { otp.resendBtn.disabled = false; otp.resendBtn.textContent = "Resend code"; }
-    if (otp.verifyBtn) { otp.verifyBtn.disabled = false; otp.verifyBtn.textContent = "Verify & Send"; }
+    if (otp.verifyBtn) { otp.verifyBtn.disabled = false; otp.verifyBtn.textContent = "Verify & Continue"; }
     otp.modal.hidden = false;
     setTimeout(function () { if (otp.input) otp.input.focus(); }, 50);
   }
@@ -313,7 +358,7 @@
     })
     .then(readJson)
     .then(function (res) {
-      if (otp.verifyBtn) { otp.verifyBtn.disabled = false; otp.verifyBtn.textContent = "Verify & Send"; }
+      if (otp.verifyBtn) { otp.verifyBtn.disabled = false; otp.verifyBtn.textContent = "Verify & Continue"; }
       if (res.ok && res.body && res.body.ok) {
         var form = otp.form;
         otp.modal.hidden = true;
@@ -327,7 +372,7 @@
       }
     })
     .catch(function () {
-      if (otp.verifyBtn) { otp.verifyBtn.disabled = false; otp.verifyBtn.textContent = "Verify & Send"; }
+      if (otp.verifyBtn) { otp.verifyBtn.disabled = false; otp.verifyBtn.textContent = "Verify & Continue"; }
       showOtpErr("Network error. Please try again.");
     });
   }
@@ -359,6 +404,7 @@
                    .catch(function () { return { ok: r.ok, body: {} }; });
   }
 
+  ensureOtpModal();
   initOtpModal();
 
   /* ── Wire all forms ─────────────────────────────────── */
