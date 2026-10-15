@@ -12,6 +12,7 @@ Indexed Annuity Secrets explains, in plain English, how fixed indexed annuities 
 
 ## Key pages
 - [Home](https://www.indexedannuitysecrets.com/): What indexed annuities are and who they help
+- [Indexed annuity questions, answered](https://www.indexedannuitysecrets.com/annuity-questions.html): Plain-English FAQ on losses, fees, surrender periods, liquidity, taxes, the 4% rule, and who annuities fit
 - [Are fixed indexed annuities safe?](https://www.indexedannuitysecrets.com/are-fixed-indexed-annuities-safe.html): Plain-English guide to the 0% floor and growth caps
 - [Annuity education](https://www.indexedannuitysecrets.com/annuity-insights.html): Types of annuities (FIA, MYGA, SPIA) and common questions
 - [Articles library](https://www.indexedannuitysecrets.com/insights/): 45+ articles on annuities and retirement income
