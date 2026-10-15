@@ -138,6 +138,18 @@ document.addEventListener('submit',function(e){var f=e.target;if(f&&f.tagName===
 document.addEventListener('click',function(e){var a=e.target&&e.target.closest?e.target.closest('a[href]'):null;if(!a)return;var h=a.getAttribute('href')||'';if(h.indexOf('tel:')===0){window.prTrack('click_to_call',{site:location.hostname});try{fbq('track','Contact');}catch(x){}}else if(h.indexOf('calendly.com')>-1){window.prTrack('click_book_call',{site:location.hostname});}else if(/\.pdf(\?|$)/i.test(h)||/\/download|escape-kit|kit-download/.test(h)){window.prTrack('file_download',{site:location.hostname,link_url:h});}},true);
 window.addEventListener('message',function(e){if(e.data&&e.data.event==='calendly.event_scheduled'){window.prTrack('book_appointment',{site:location.hostname});try{fbq('track','Schedule');}catch(x){}}});
 </script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebPage",
+  "name": "Privacy Policy",
+  "url": "https://www.indexedannuitysecrets.com/privacy-policy.html",
+  "description": "Privacy Policy for Indexed Annuity Secrets by Gregory Stevenson.",
+  "isPartOf": { "@type": "WebSite", "name": "Indexed Annuity Secrets", "url": "https://www.indexedannuitysecrets.com/" },
+  "publisher": { "@type": "Organization", "name": "Indexed Annuity Secrets", "url": "https://www.indexedannuitysecrets.com/" },
+  "about": "Fixed indexed annuities and retirement income planning"
+}
+</script>
 </head>
 <body>
 
