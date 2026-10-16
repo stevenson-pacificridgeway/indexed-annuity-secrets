@@ -8,6 +8,9 @@
 	root * /srv
 	encode gzip
 
+	# Vanity redirect: /active-resources -> the Resources page
+	redir /active-resources /resources permanent
+
 	# Clean URLs: /contact -> contact.html if present
 	try_files {path} {path}.html {path}/index.html
 
