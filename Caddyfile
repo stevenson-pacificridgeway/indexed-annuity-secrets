@@ -8,6 +8,19 @@
 	root * /srv
 	encode gzip
 
+	# One canonical address: send bare domain to www
+	@nonwww host indexedannuitysecrets.com
+	redir @nonwww https://www.indexedannuitysecrets.com{uri} permanent
+
+	# Old .html addresses -> clean URLs (keeps one version of each page in Google)
+	@indexhtml path_regexp idx ^(.*/)index\.html$
+	redir @indexhtml {re.idx.1} permanent
+	@html {
+		path_regexp htm ^(.+)\.html$
+		not path */index.html
+	}
+	redir @html {re.htm.1} permanent
+
 	# Vanity redirect: /active-resources -> the Resources page
 	redir /active-resources /resources permanent
 
