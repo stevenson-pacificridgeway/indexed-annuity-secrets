@@ -8,6 +8,16 @@
 	root * /srv
 	encode gzip
 
+	# Security headers (all responses)
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Frame-Options "SAMEORIGIN"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "geolocation=(), camera=(), microphone=()"
+		-Server
+	}
+
 	# One canonical address: send bare domain to www
 	@nonwww host indexedannuitysecrets.com
 	redir @nonwww https://www.indexedannuitysecrets.com{uri} permanent
