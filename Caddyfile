@@ -10,13 +10,18 @@
 
 	# Security headers (all responses)
 	header {
-		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		Strict-Transport-Security "max-age=63072000; includeSubDomains"
 		X-Frame-Options "SAMEORIGIN"
 		X-Content-Type-Options "nosniff"
 		Referrer-Policy "strict-origin-when-cross-origin"
-		Permissions-Policy "geolocation=(), camera=(), microphone=()"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		Content-Security-Policy "frame-ancestors 'self'; object-src 'none'; base-uri 'self'; upgrade-insecure-requests"
 		-Server
 	}
+
+	# Never serve backend config, source control, or backup files
+	@blocked path /Caddyfile /Dockerfile /.dockerignore /.env* /.git /.git/* *.zip *.bak *.bak-* *.backup *.sql *.tar *.gz *.tgz *.log
+	respond @blocked 404
 
 	# One canonical address: send bare domain to www
 	@nonwww host indexedannuitysecrets.com
